@@ -519,9 +519,7 @@ DH_set_length(DH *dh, long length)
 	if (length < 0 || length > INT_MAX)
 		return 0;
 
-#if !defined(OPENSSL_IS_BORINGSSL)
 	dh->length = length;
-#endif
 	return 1;
 }
 #endif /* HAVE_DH_SET_LENGTH */

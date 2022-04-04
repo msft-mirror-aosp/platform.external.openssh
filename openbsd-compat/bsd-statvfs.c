@@ -22,11 +22,6 @@
 # include <sys/mount.h>
 #endif
 
-#if defined(ANDROID)
-#include <sys/param.h>
-#define MNAMELEN PATH_MAX
-#endif
-
 #include <errno.h>
 
 #ifndef MNAMELEN

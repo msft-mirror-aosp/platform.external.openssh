@@ -106,7 +106,6 @@ openpty_streams(int *amaster, int *aslave)
 		return (-1);
 	}
 
-#if !defined(ANDROID)
 # if defined(I_FIND) && defined(__SVR4)
 	/*
 	 * If the streams modules have already been pushed then there
@@ -125,7 +124,6 @@ openpty_streams(int *amaster, int *aslave)
 # ifndef __hpux
 	ioctl(*aslave, I_PUSH, "ttcompat");
 # endif /* __hpux */
-#endif
 
 	return (0);
 }

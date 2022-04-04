@@ -2180,9 +2180,7 @@ safe_path(const char *name, struct stat *stp, const char *pw_dir,
 	char buf[PATH_MAX], homedir[PATH_MAX];
 	char *cp;
 	int comparehome = 0;
-#if !defined(ANDROID)
 	struct stat st;
-#endif
 
 	if (realpath(name, buf) == NULL) {
 		snprintf(err, errlen, "realpath %s failed: %s", name,
@@ -2211,8 +2209,6 @@ safe_path(const char *name, struct stat *stp, const char *pw_dir,
 		}
 		strlcpy(buf, cp, sizeof(buf));
 
-#if !defined(ANDROID)
-		/* /data is owned by system user, which causes this check to fail */
 		if (stat(buf, &st) == -1 ||
 		    (!platform_sys_dir_uid(st.st_uid) && st.st_uid != uid) ||
 		    (st.st_mode & 022) != 0) {
@@ -2220,7 +2216,6 @@ safe_path(const char *name, struct stat *stp, const char *pw_dir,
 			    "bad ownership or modes for directory %s", buf);
 			return -1;
 		}
-#endif
 
 		/* If are past the homedir then we can stop */
 		if (comparehome && strcmp(homedir, buf) == 0)

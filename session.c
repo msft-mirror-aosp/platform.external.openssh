@@ -1051,13 +1051,11 @@ do_setup_env(struct ssh *ssh, Session *s, const char *shell)
 # endif /* HAVE_CYGWIN */
 #endif /* HAVE_LOGIN_CAP */
 
-#if !defined(ANDROID)
 	if (!options.use_pam) {
 		snprintf(buf, sizeof buf, "%.200s/%.50s",
 		    _PATH_MAILDIR, pw->pw_name);
 		child_set_env(&env, &envsize, "MAIL", buf);
 	}
-#endif
 
 	/* Normal systems set SHELL by default. */
 	child_set_env(&env, &envsize, "SHELL", shell);

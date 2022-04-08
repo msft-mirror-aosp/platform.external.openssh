@@ -1,4 +1,4 @@
-#	$OpenBSD: forcecommand.sh,v 1.4 2017/04/30 23:34:55 djm Exp $
+#	$OpenBSD: forcecommand.sh,v 1.3 2015/03/03 22:35:19 markus Exp $
 #	Placed in the Public Domain.
 
 tid="forced command"
@@ -11,8 +11,11 @@ for t in ${SSH_KEYTYPES}; do
 	cat $OBJ/$t.pub >> $OBJ/authorized_keys_$USER
 done
 
-trace "forced command in key option"
-${SSH} -F $OBJ/ssh_proxy somehost false || fail "forced command in key"
+for p in ${SSH_PROTOCOLS}; do
+	trace "forced command in key option proto $p"
+	${SSH} -$p -F $OBJ/ssh_proxy somehost false \ ||
+	    fail "forced command in key proto $p"
+done
 
 cp /dev/null $OBJ/authorized_keys_$USER
 for t in ${SSH_KEYTYPES}; do
@@ -23,13 +26,19 @@ done
 cp $OBJ/sshd_proxy_bak $OBJ/sshd_proxy
 echo "ForceCommand true" >> $OBJ/sshd_proxy
 
-trace "forced command in sshd_config overrides key option"
-${SSH} -F $OBJ/ssh_proxy somehost false || fail "forced command in key"
+for p in ${SSH_PROTOCOLS}; do
+	trace "forced command in sshd_config overrides key option proto $p"
+	${SSH} -$p -F $OBJ/ssh_proxy somehost false \ ||
+	    fail "forced command in key proto $p"
+done
 
 cp $OBJ/sshd_proxy_bak $OBJ/sshd_proxy
 echo "ForceCommand false" >> $OBJ/sshd_proxy
 echo "Match User $USER" >> $OBJ/sshd_proxy
 echo "    ForceCommand true" >> $OBJ/sshd_proxy
 
-trace "forced command with match"
-${SSH} -F $OBJ/ssh_proxy somehost false || fail "forced command in key"
+for p in ${SSH_PROTOCOLS}; do
+	trace "forced command with match proto $p"
+	${SSH} -$p -F $OBJ/ssh_proxy somehost false \ ||
+	    fail "forced command in key proto $p"
+done

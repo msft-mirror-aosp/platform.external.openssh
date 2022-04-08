@@ -1,4 +1,4 @@
-/* $OpenBSD: hostfile.c,v 1.79 2020/03/06 18:25:12 markus Exp $ */
+/* $OpenBSD: hostfile.c,v 1.68 2017/03/10 04:26:06 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -49,6 +49,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
 
 #include "xmalloc.h"
@@ -162,12 +163,13 @@ int
 hostfile_read_key(char **cpp, u_int *bitsp, struct sshkey *ret)
 {
 	char *cp;
+	int r;
 
 	/* Skip leading whitespace. */
 	for (cp = *cpp; *cp == ' ' || *cp == '\t'; cp++)
 		;
 
-	if (sshkey_read(ret, &cp) != 0)
+	if ((r = sshkey_read(ret, &cp)) != 0)
 		return 0;
 
 	/* Skip trailing whitespace. */
@@ -249,7 +251,7 @@ record_hostkey(struct hostkey_foreach_line *l, void *_ctx)
 	    l->marker == MRK_NONE ? "" :
 	    (l->marker == MRK_CA ? "ca " : "revoked "),
 	    sshkey_type(l->key), l->path, l->linenum);
-	if ((tmp = recallocarray(hostkeys->entries, hostkeys->num_entries,
+	if ((tmp = reallocarray(hostkeys->entries,
 	    hostkeys->num_entries + 1, sizeof(*hostkeys->entries))) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	hostkeys->entries = tmp;
@@ -298,7 +300,8 @@ free_hostkeys(struct hostkeys *hostkeys)
 		explicit_bzero(hostkeys->entries + i, sizeof(*hostkeys->entries));
 	}
 	free(hostkeys->entries);
-	freezero(hostkeys, sizeof(*hostkeys));
+	explicit_bzero(hostkeys, sizeof(*hostkeys));
+	free(hostkeys);
 }
 
 static int
@@ -312,7 +315,7 @@ check_key_not_revoked(struct hostkeys *hostkeys, struct sshkey *k)
 			continue;
 		if (sshkey_equal_public(k, hostkeys->entries[i].key))
 			return -1;
-		if (is_cert && k != NULL &&
+		if (is_cert &&
 		    sshkey_equal_public(k->cert->signature_key,
 		    hostkeys->entries[i].key))
 			return -1;
@@ -343,11 +346,16 @@ check_hostkeys_by_key_or_type(struct hostkeys *hostkeys,
 	HostStatus end_return = HOST_NEW;
 	int want_cert = sshkey_is_cert(k);
 	HostkeyMarker want_marker = want_cert ? MRK_CA : MRK_NONE;
+	int proto = (k ? k->type : keytype) == KEY_RSA1 ? 1 : 2;
 
 	if (found != NULL)
 		*found = NULL;
 
 	for (i = 0; i < hostkeys->num_entries; i++) {
+		if (proto == 1 && hostkeys->entries[i].key->type != KEY_RSA1)
+			continue;
+		if (proto == 2 && hostkeys->entries[i].key->type == KEY_RSA1)
+			continue;
 		if (hostkeys->entries[i].marker != want_marker)
 			continue;
 		if (k == NULL) {
@@ -482,6 +490,13 @@ host_delete(struct hostkey_foreach_line *l, void *_ctx)
 			return 0;
 		}
 
+		/* XXX might need a knob for this later */
+		/* Don't remove RSA1 keys */
+		if (l->key->type == KEY_RSA1) {
+			fprintf(ctx->out, "%s\n", l->line);
+			return 0;
+		}
+
 		/*
 		 * If this line contains one of the keys that we will be
 		 * adding later, then don't change it and mark the key for
@@ -542,8 +557,8 @@ hostfile_replace_entries(const char *filename, const char *host, const char *ip,
 	/*
 	 * Prepare temporary file for in-place deletion.
 	 */
-	if ((r = asprintf(&temp, "%s.XXXXXXXXXXX", filename)) == -1 ||
-	    (r = asprintf(&back, "%s.old", filename)) == -1) {
+	if ((r = asprintf(&temp, "%s.XXXXXXXXXXX", filename)) < 0 ||
+	    (r = asprintf(&back, "%s.old", filename)) < 0) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto fail;
 	}
@@ -565,7 +580,6 @@ hostfile_replace_entries(const char *filename, const char *host, const char *ip,
 	/* Remove all entries for the specified host from the file */
 	if ((r = hostkeys_foreach(filename, host_delete, &ctx, host, ip,
 	    HKF_WANT_PARSE_KEY)) != 0) {
-		oerrno = errno;
 		error("%s: hostkeys_foreach failed: %s", __func__, ssh_err(r));
 		goto fail;
 	}
@@ -661,14 +675,14 @@ hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
     const char *host, const char *ip, u_int options)
 {
 	FILE *f;
-	char *line = NULL, ktype[128];
+	char line[8192], oline[8192], ktype[128];
 	u_long linenum = 0;
 	char *cp, *cp2;
 	u_int kbits;
 	int hashed;
 	int s, r = 0;
 	struct hostkey_foreach_line lineinfo;
-	size_t linesize = 0, l;
+	size_t l;
 
 	memset(&lineinfo, 0, sizeof(lineinfo));
 	if (host == NULL && (options & HKF_WANT_MATCH) != 0)
@@ -677,16 +691,15 @@ hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
 		return SSH_ERR_SYSTEM_ERROR;
 
 	debug3("%s: reading file \"%s\"", __func__, path);
-	while (getline(&line, &linesize, f) != -1) {
-		linenum++;
+	while (read_keyfile_line(f, path, line, sizeof(line), &linenum) == 0) {
 		line[strcspn(line, "\n")] = '\0';
+		strlcpy(oline, line, sizeof(oline));
 
-		free(lineinfo.line);
 		sshkey_free(lineinfo.key);
 		memset(&lineinfo, 0, sizeof(lineinfo));
 		lineinfo.path = path;
 		lineinfo.linenum = linenum;
-		lineinfo.line = xstrdup(line);
+		lineinfo.line = oline;
 		lineinfo.marker = MRK_NONE;
 		lineinfo.status = HKF_STATUS_OK;
 		lineinfo.keytype = KEY_UNSPEC;
@@ -776,7 +789,20 @@ hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
 				break;
 			}
 			if (!hostfile_read_key(&cp, &kbits, lineinfo.key)) {
+#ifdef WITH_SSH1
+				sshkey_free(lineinfo.key);
+				lineinfo.key = sshkey_new(KEY_RSA1);
+				if (lineinfo.key  == NULL) {
+					error("%s: sshkey_new fail", __func__);
+					r = SSH_ERR_ALLOC_FAIL;
+					break;
+				}
+				if (!hostfile_read_key(&cp, &kbits,
+				    lineinfo.key))
+					goto bad;
+#else
 				goto bad;
+#endif
 			}
 			lineinfo.keytype = lineinfo.key->type;
 			lineinfo.comment = cp;
@@ -791,12 +817,12 @@ hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
 			lineinfo.keytype = sshkey_type_from_name(ktype);
 
 			/*
-			 * Assume legacy RSA1 if the first component is a short
+			 * Assume RSA1 if the first component is a short
 			 * decimal number.
 			 */
 			if (lineinfo.keytype == KEY_UNSPEC && l < 8 &&
 			    strspn(ktype, "0123456789") == l)
-				goto bad;
+				lineinfo.keytype = KEY_RSA1;
 
 			/*
 			 * Check that something other than whitespace follows
@@ -825,8 +851,6 @@ hostkeys_foreach(const char *path, hostkeys_foreach_fn *callback, void *ctx,
 			break;
 	}
 	sshkey_free(lineinfo.key);
-	free(lineinfo.line);
-	free(line);
 	fclose(f);
 	return r;
 }

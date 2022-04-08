@@ -47,7 +47,7 @@ int
 main(void)
 {
 	char b[5];
-	char *src = NULL;
+	char *src;
 
 	snprintf(b,5,"123456789");
 	if (b[4] != '\0')
@@ -69,6 +69,5 @@ main(void)
 	if (x_snprintf(b, 1, "%s %d", "hello", 12345) != 11)
 		fail("vsnprintf does not return required length");
 
-	free(src);
 	return failed;
 }

@@ -1,4 +1,4 @@
-/* $OpenBSD: hmac.c,v 1.14 2020/02/26 13:40:09 jsg Exp $ */
+/* $OpenBSD: hmac.c,v 1.12 2015/03/24 20:03:44 markus Exp $ */
 /*
  * Copyright (c) 2014 Markus Friedl.  All rights reserved.
  *
@@ -18,8 +18,6 @@
 #include "includes.h"
 
 #include <sys/types.h>
-
-#include <stdlib.h>
 #include <string.h>
 
 #include "sshbuf.h"
@@ -131,7 +129,8 @@ ssh_hmac_free(struct ssh_hmac_ctx *ctx)
 			explicit_bzero(ctx->buf, ctx->buf_len);
 			free(ctx->buf);
 		}
-		freezero(ctx, sizeof(*ctx));
+		explicit_bzero(ctx, sizeof(*ctx));
+		free(ctx);
 	}
 }
 

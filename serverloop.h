@@ -1,4 +1,4 @@
-/* $OpenBSD: serverloop.h,v 1.8 2017/09/12 06:32:07 djm Exp $ */
+/* $OpenBSD: serverloop.h,v 1.7 2016/08/13 17:47:41 markus Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
@@ -21,8 +21,6 @@
 #ifndef SERVERLOOP_H
 #define SERVERLOOP_H
 
-struct ssh;
-
-void    server_loop2(struct ssh *, Authctxt *);
+void    server_loop2(Authctxt *);
 
 #endif

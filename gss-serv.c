@@ -1,4 +1,4 @@
-/* $OpenBSD: gss-serv.c,v 1.32 2020/03/13 03:17:07 djm Exp $ */
+/* $OpenBSD: gss-serv.c,v 1.29 2015/05/22 03:50:02 djm Exp $ */
 
 /*
  * Copyright (c) 2001-2003 Simon Wilkinson. All rights reserved.
@@ -36,7 +36,8 @@
 
 #include "openbsd-compat/sys-queue.h"
 #include "xmalloc.h"
-#include "sshkey.h"
+#include "buffer.h"
+#include "key.h"
 #include "hostfile.h"
 #include "auth.h"
 #include "log.h"
@@ -337,7 +338,7 @@ ssh_gssapi_storecreds(void)
 		debug("ssh_gssapi_storecreds: Not a GSSAPI mechanism");
 }
 
-/* This allows GSSAPI methods to do things to the child's environment based
+/* This allows GSSAPI methods to do things to the childs environment based
  * on the passed authentication process and credentials.
  */
 /* As user */
@@ -390,15 +391,6 @@ ssh_gssapi_checkmic(Gssctxt *ctx, gss_buffer_t gssbuf, gss_buffer_t gssmic)
 	    gssbuf, gssmic, NULL);
 
 	return (ctx->major);
-}
-
-/* Privileged */
-const char *ssh_gssapi_displayname(void)
-{
-	if (gssapi_client.displayname.length == 0 ||
-	    gssapi_client.displayname.value == NULL)
-		return NULL;
-	return (char *)gssapi_client.displayname.value;
 }
 
 #endif

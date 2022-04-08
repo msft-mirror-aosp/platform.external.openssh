@@ -1,4 +1,4 @@
-/* $OpenBSD: sftp-server.c,v 1.117 2019/07/05 04:55:40 djm Exp $ */
+/* $OpenBSD: sftp-server.c,v 1.110 2016/09/12 01:22:38 deraadt Exp $ */
 /*
  * Copyright (c) 2000-2004 Markus Friedl.  All rights reserved.
  *
@@ -50,8 +50,6 @@
 
 #include "sftp.h"
 #include "sftp-common.h"
-
-char *sftp_realpath(const char *, char *); /* sftp-realpath.c */
 
 /* Our verbosity */
 static LogLevel log_level = SYSLOG_LEVEL_ERROR;
@@ -109,7 +107,6 @@ static void process_extended_statvfs(u_int32_t id);
 static void process_extended_fstatvfs(u_int32_t id);
 static void process_extended_hardlink(u_int32_t id);
 static void process_extended_fsync(u_int32_t id);
-static void process_extended_lsetstat(u_int32_t id);
 static void process_extended(u_int32_t id);
 
 struct sftp_handler {
@@ -120,7 +117,7 @@ struct sftp_handler {
 	int does_write;		/* if nonzero, banned for readonly mode */
 };
 
-static const struct sftp_handler handlers[] = {
+struct sftp_handler handlers[] = {
 	/* NB. SSH2_FXP_OPEN does the readonly check in the handler itself */
 	{ "open", NULL, SSH2_FXP_OPEN, process_open, 0 },
 	{ "close", NULL, SSH2_FXP_CLOSE, process_close, 0 },
@@ -144,19 +141,18 @@ static const struct sftp_handler handlers[] = {
 };
 
 /* SSH2_FXP_EXTENDED submessages */
-static const struct sftp_handler extended_handlers[] = {
+struct sftp_handler extended_handlers[] = {
 	{ "posix-rename", "posix-rename@openssh.com", 0,
 	   process_extended_posix_rename, 1 },
 	{ "statvfs", "statvfs@openssh.com", 0, process_extended_statvfs, 0 },
 	{ "fstatvfs", "fstatvfs@openssh.com", 0, process_extended_fstatvfs, 0 },
 	{ "hardlink", "hardlink@openssh.com", 0, process_extended_hardlink, 1 },
 	{ "fsync", "fsync@openssh.com", 0, process_extended_fsync, 1 },
-	{ "lsetstat", "lsetstat@openssh.com", 0, process_extended_lsetstat, 1 },
 	{ NULL, NULL, 0, NULL, 0 }
 };
 
 static int
-request_permitted(const struct sftp_handler *h)
+request_permitted(struct sftp_handler *h)
 {
 	char *result;
 
@@ -289,9 +285,9 @@ enum {
 	HANDLE_FILE
 };
 
-static Handle *handles = NULL;
-static u_int num_handles = 0;
-static int first_unused_handle = -1;
+Handle *handles = NULL;
+u_int num_handles = 0;
+int first_unused_handle = -1;
 
 static void handle_unused(int i)
 {
@@ -670,8 +666,6 @@ process_init(void)
 	    (r = sshbuf_put_cstring(msg, "1")) != 0 || /* version */
 	    /* fsync extension */
 	    (r = sshbuf_put_cstring(msg, "fsync@openssh.com")) != 0 ||
-	    (r = sshbuf_put_cstring(msg, "1")) != 0 || /* version */
-	    (r = sshbuf_put_cstring(msg, "lsetstat@openssh.com")) != 0 ||
 	    (r = sshbuf_put_cstring(msg, "1")) != 0) /* version */
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	send_msg(msg);
@@ -697,13 +691,13 @@ process_open(u_int32_t id)
 	logit("open \"%s\" flags %s mode 0%o",
 	    name, string_from_portable(pflags), mode);
 	if (readonly &&
-	    ((flags & O_ACCMODE) != O_RDONLY ||
-	    (flags & (O_CREAT|O_TRUNC)) != 0)) {
+	    ((flags & O_ACCMODE) == O_WRONLY ||
+	    (flags & O_ACCMODE) == O_RDWR)) {
 		verbose("Refusing open request in read-only mode");
 		status = SSH2_FX_PERMISSION_DENIED;
 	} else {
 		fd = open(name, flags, mode);
-		if (fd == -1) {
+		if (fd < 0) {
 			status = errno_to_portable(errno);
 		} else {
 			handle = handle_new(HANDLE_FILE, name, fd, flags, NULL);
@@ -756,12 +750,12 @@ process_read(u_int32_t id)
 	}
 	fd = handle_to_fd(handle);
 	if (fd >= 0) {
-		if (lseek(fd, off, SEEK_SET) == -1) {
+		if (lseek(fd, off, SEEK_SET) < 0) {
 			error("process_read: seek failed");
 			status = errno_to_portable(errno);
 		} else {
 			ret = read(fd, buf, len);
-			if (ret == -1) {
+			if (ret < 0) {
 				status = errno_to_portable(errno);
 			} else if (ret == 0) {
 				status = SSH2_FX_EOF;
@@ -797,13 +791,13 @@ process_write(u_int32_t id)
 		status = SSH2_FX_FAILURE;
 	else {
 		if (!(handle_to_flags(handle) & O_APPEND) &&
-				lseek(fd, off, SEEK_SET) == -1) {
+				lseek(fd, off, SEEK_SET) < 0) {
 			status = errno_to_portable(errno);
 			error("process_write: seek failed");
 		} else {
 /* XXX ATOMICIO ? */
 			ret = write(fd, data, len);
-			if (ret == -1) {
+			if (ret < 0) {
 				error("process_write: write failed");
 				status = errno_to_portable(errno);
 			} else if ((size_t)ret == len) {
@@ -833,7 +827,7 @@ process_do_stat(u_int32_t id, int do_lstat)
 	debug3("request %u: %sstat", id, do_lstat ? "l" : "");
 	verbose("%sstat name \"%s\"", do_lstat ? "l" : "", name);
 	r = do_lstat ? lstat(name, &st) : stat(name, &st);
-	if (r == -1) {
+	if (r < 0) {
 		status = errno_to_portable(errno);
 	} else {
 		stat_to_attrib(&st, &a);
@@ -871,7 +865,7 @@ process_fstat(u_int32_t id)
 	fd = handle_to_fd(handle);
 	if (fd >= 0) {
 		r = fstat(fd, &st);
-		if (r == -1) {
+		if (r < 0) {
 			status = errno_to_portable(errno);
 		} else {
 			stat_to_attrib(&st, &a);
@@ -893,18 +887,6 @@ attrib_to_tv(const Attrib *a)
 	tv[1].tv_sec = a->mtime;
 	tv[1].tv_usec = 0;
 	return tv;
-}
-
-static struct timespec *
-attrib_to_ts(const Attrib *a)
-{
-	static struct timespec ts[2];
-
-	ts[0].tv_sec = a->atime;
-	ts[0].tv_nsec = 0;
-	ts[1].tv_sec = a->mtime;
-	ts[1].tv_nsec = 0;
-	return ts;
 }
 
 static void
@@ -1081,7 +1063,7 @@ process_readdir(u_int32_t id)
 /* XXX OVERFLOW ? */
 			snprintf(pathname, sizeof pathname, "%s%s%s", path,
 			    strcmp(path, "/") ? "/" : "", dp->d_name);
-			if (lstat(pathname, &st) == -1)
+			if (lstat(pathname, &st) < 0)
 				continue;
 			stat_to_attrib(&st, &(stats[count].attrib));
 			stats[count].name = xstrdup(dp->d_name);
@@ -1176,7 +1158,7 @@ process_realpath(u_int32_t id)
 	}
 	debug3("request %u: realpath", id);
 	verbose("realpath \"%s\"", path);
-	if (sftp_realpath(path, resolvedname) == NULL) {
+	if (realpath(path, resolvedname) == NULL) {
 		send_status(id, errno_to_portable(errno));
 	} else {
 		Stat s;
@@ -1388,55 +1370,6 @@ process_extended_fsync(u_int32_t id)
 }
 
 static void
-process_extended_lsetstat(u_int32_t id)
-{
-	Attrib a;
-	char *name;
-	int r, status = SSH2_FX_OK;
-
-	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0 ||
-	    (r = decode_attrib(iqueue, &a)) != 0)
-		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-
-	debug("request %u: lsetstat name \"%s\"", id, name);
-	if (a.flags & SSH2_FILEXFER_ATTR_SIZE) {
-		/* nonsensical for links */
-		status = SSH2_FX_BAD_MESSAGE;
-		goto out;
-	}
-	if (a.flags & SSH2_FILEXFER_ATTR_PERMISSIONS) {
-		logit("set \"%s\" mode %04o", name, a.perm);
-		r = fchmodat(AT_FDCWD, name,
-		    a.perm & 07777, AT_SYMLINK_NOFOLLOW);
-		if (r == -1)
-			status = errno_to_portable(errno);
-	}
-	if (a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
-		char buf[64];
-		time_t t = a.mtime;
-
-		strftime(buf, sizeof(buf), "%Y%m%d-%H:%M:%S",
-		    localtime(&t));
-		logit("set \"%s\" modtime %s", name, buf);
-		r = utimensat(AT_FDCWD, name,
-		    attrib_to_ts(&a), AT_SYMLINK_NOFOLLOW);
-		if (r == -1)
-			status = errno_to_portable(errno);
-	}
-	if (a.flags & SSH2_FILEXFER_ATTR_UIDGID) {
-		logit("set \"%s\" owner %lu group %lu", name,
-		    (u_long)a.uid, (u_long)a.gid);
-		r = fchownat(AT_FDCWD, name, a.uid, a.gid,
-		    AT_SYMLINK_NOFOLLOW);
-		if (r == -1)
-			status = errno_to_portable(errno);
-	}
- out:
-	send_status(id, status);
-	free(name);
-}
-
-static void
 process_extended(u_int32_t id)
 {
 	char *request;
@@ -1570,12 +1503,13 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 	int i, r, in, out, max, ch, skipargs = 0, log_stderr = 0;
 	ssize_t len, olen, set_size;
 	SyslogFacility log_facility = SYSLOG_FACILITY_AUTH;
-	char *cp, *homedir = NULL, uidstr[32], buf[4*4096];
+	char *cp, *homedir = NULL, buf[4*4096];
 	long mask;
 
 	extern char *optarg;
 	extern char *__progname;
 
+	ssh_malloc_init();	/* must be called before any mallocs */
 	__progname = ssh_get_progname(argv[0]);
 	log_init(__progname, log_level, log_facility, log_stderr);
 
@@ -1620,10 +1554,8 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 			break;
 		case 'd':
 			cp = tilde_expand_filename(optarg, user_pw->pw_uid);
-			snprintf(uidstr, sizeof(uidstr), "%llu",
-			    (unsigned long long)pw->pw_uid);
 			homedir = percent_expand(cp, "d", user_pw->pw_dir,
-			    "u", user_pw->pw_name, "U", uidstr, (char *)NULL);
+			    "u", user_pw->pw_name, (char *)NULL);
 			free(cp);
 			break;
 		case 'p':
@@ -1728,7 +1660,7 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 		if (olen > 0)
 			FD_SET(out, wset);
 
-		if (select(max+1, rset, wset, NULL, NULL) == -1) {
+		if (select(max+1, rset, wset, NULL, NULL) < 0) {
 			if (errno == EINTR)
 				continue;
 			error("select: %s", strerror(errno));
@@ -1741,7 +1673,7 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 			if (len == 0) {
 				debug("read eof");
 				sftp_server_cleanup_exit(0);
-			} else if (len == -1) {
+			} else if (len < 0) {
 				error("read: %s", strerror(errno));
 				sftp_server_cleanup_exit(1);
 			} else if ((r = sshbuf_put(iqueue, buf, len)) != 0) {
@@ -1752,7 +1684,7 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 		/* send oqueue to stdout */
 		if (FD_ISSET(out, wset)) {
 			len = write(out, sshbuf_ptr(oqueue), olen);
-			if (len == -1) {
+			if (len < 0) {
 				error("write: %s", strerror(errno));
 				sftp_server_cleanup_exit(1);
 			} else if ((r = sshbuf_consume(oqueue, len)) != 0) {

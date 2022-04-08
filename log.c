@@ -1,4 +1,4 @@
-/* $OpenBSD: log.c,v 1.51 2018/07/27 12:03:17 markus Exp $ */
+/* $OpenBSD: log.c,v 1.49 2017/03/10 03:15:58 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -104,12 +104,6 @@ static struct {
 	{ "DEBUG3",	SYSLOG_LEVEL_DEBUG3 },
 	{ NULL,		SYSLOG_LEVEL_NOT_SET }
 };
-
-LogLevel
-log_level_get(void)
-{
-	return log_level;
-}
 
 SyslogFacility
 log_facility_number(char *name)
@@ -262,7 +256,18 @@ log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
 
 	argv0 = av0;
 
-	if (log_change_level(level) != 0) {
+	switch (level) {
+	case SYSLOG_LEVEL_QUIET:
+	case SYSLOG_LEVEL_FATAL:
+	case SYSLOG_LEVEL_ERROR:
+	case SYSLOG_LEVEL_INFO:
+	case SYSLOG_LEVEL_VERBOSE:
+	case SYSLOG_LEVEL_DEBUG1:
+	case SYSLOG_LEVEL_DEBUG2:
+	case SYSLOG_LEVEL_DEBUG3:
+		log_level = level;
+		break;
+	default:
 		fprintf(stderr, "Unrecognized internal syslog level code %d\n",
 		    (int) level);
 		exit(1);
@@ -335,27 +340,13 @@ log_init(char *av0, LogLevel level, SyslogFacility facility, int on_stderr)
 #endif
 }
 
-int
+void
 log_change_level(LogLevel new_log_level)
 {
 	/* no-op if log_init has not been called */
 	if (argv0 == NULL)
-		return 0;
-
-	switch (new_log_level) {
-	case SYSLOG_LEVEL_QUIET:
-	case SYSLOG_LEVEL_FATAL:
-	case SYSLOG_LEVEL_ERROR:
-	case SYSLOG_LEVEL_INFO:
-	case SYSLOG_LEVEL_VERBOSE:
-	case SYSLOG_LEVEL_DEBUG1:
-	case SYSLOG_LEVEL_DEBUG2:
-	case SYSLOG_LEVEL_DEBUG3:
-		log_level = new_log_level;
-		return 0;
-	default:
-		return -1;
-	}
+		return;
+	log_init(argv0, new_log_level, log_facility, log_on_stderr);
 }
 
 int

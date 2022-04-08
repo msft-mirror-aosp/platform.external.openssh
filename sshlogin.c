@@ -1,4 +1,4 @@
-/* $OpenBSD: sshlogin.c,v 1.34 2019/06/28 13:35:04 deraadt Exp $ */
+/* $OpenBSD: sshlogin.c,v 1.32 2015/12/26 20:51:35 guenther Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -55,15 +55,13 @@
 #include <unistd.h>
 #include <limits.h>
 
-#include "sshlogin.h"
-#include "ssherr.h"
 #include "loginrec.h"
 #include "log.h"
-#include "sshbuf.h"
+#include "buffer.h"
 #include "misc.h"
 #include "servconf.h"
 
-extern struct sshbuf *loginmsg;
+extern Buffer loginmsg;
 extern ServerOptions options;
 
 /*
@@ -90,12 +88,8 @@ static void
 store_lastlog_message(const char *user, uid_t uid)
 {
 #ifndef NO_SSH_LASTLOG
-# ifndef CUSTOM_SYS_AUTH_GET_LASTLOGIN_MSG
-	char hostname[HOST_NAME_MAX+1] = "";
+	char *time_string, hostname[HOST_NAME_MAX+1] = "", buf[512];
 	time_t last_login_time;
-# endif
-	char *time_string;
-	int r;
 
 	if (!options.print_lastlog)
 		return;
@@ -103,9 +97,7 @@ store_lastlog_message(const char *user, uid_t uid)
 # ifdef CUSTOM_SYS_AUTH_GET_LASTLOGIN_MSG
 	time_string = sys_auth_get_lastlogin_msg(user, uid);
 	if (time_string != NULL) {
-		if ((r = sshbuf_put(loginmsg,
-		    time_string, strlen(time_string))) != 0)
-			fatal("%s: buffer error: %s", __func__, ssh_err(r));
+		buffer_append(&loginmsg, time_string, strlen(time_string));
 		free(time_string);
 	}
 # else
@@ -116,13 +108,12 @@ store_lastlog_message(const char *user, uid_t uid)
 		time_string = ctime(&last_login_time);
 		time_string[strcspn(time_string, "\n")] = '\0';
 		if (strcmp(hostname, "") == 0)
-			r = sshbuf_putf(loginmsg, "Last login: %s\r\n",
+			snprintf(buf, sizeof(buf), "Last login: %s\r\n",
 			    time_string);
 		else
-			r = sshbuf_putf(loginmsg, "Last login: %s from %s\r\n",
+			snprintf(buf, sizeof(buf), "Last login: %s from %s\r\n",
 			    time_string, hostname);
-		if (r != 0)
-			fatal("%s: buffer error: %s", __func__, ssh_err(r));
+		buffer_append(&loginmsg, buf, strlen(buf));
 	}
 # endif /* CUSTOM_SYS_AUTH_GET_LASTLOGIN_MSG */
 #endif /* NO_SSH_LASTLOG */

@@ -1,4 +1,4 @@
-/* $OpenBSD: progressmeter.c,v 1.50 2020/01/23 07:10:22 dtucker Exp $ */
+/* $OpenBSD: progressmeter.c,v 1.45 2016/06/30 05:17:05 dtucker Exp $ */
 /*
  * Copyright (c) 2003 Nils Nordman.  All rights reserved.
  *
@@ -31,7 +31,6 @@
 
 #include <errno.h>
 #include <signal.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -40,7 +39,6 @@
 #include "progressmeter.h"
 #include "atomicio.h"
 #include "misc.h"
-#include "utf8.h"
 
 #define DEFAULT_WINSIZE 80
 #define MAX_WINSIZE 512
@@ -59,8 +57,11 @@ static void format_rate(char *, int, off_t);
 static void sig_winch(int);
 static void setscreensize(void);
 
+/* updates the progressmeter to reflect the current state of the transfer */
+void refresh_progress_meter(void);
+
 /* signal handler for updating the progress meter */
-static void sig_alarm(int);
+static void update_progress_meter(int);
 
 static double start;		/* start progress */
 static double last_update;	/* last progress update */
@@ -73,7 +74,6 @@ static long stalled;		/* how long we have been stalled */
 static int bytes_per_second;	/* current speed in bytes per second */
 static int win_size;		/* terminal window size */
 static volatile sig_atomic_t win_resized; /* for window resizing */
-static volatile sig_atomic_t alarm_fired;
 
 /* units for format_size */
 static const char unit[] = " KMGT";
@@ -117,7 +117,7 @@ format_size(char *buf, int size, off_t bytes)
 }
 
 void
-refresh_progress_meter(int force_update)
+refresh_progress_meter(void)
 {
 	char buf[MAX_WINSIZE + 1];
 	off_t transferred;
@@ -126,16 +126,8 @@ refresh_progress_meter(int force_update)
 	off_t bytes_left;
 	int cur_speed;
 	int hours, minutes, seconds;
+	int i, len;
 	int file_len;
-
-	if ((!force_update && !alarm_fired && !win_resized) || !can_output())
-		return;
-	alarm_fired = 0;
-
-	if (win_resized) {
-		setscreensize();
-		win_resized = 0;
-	}
 
 	transferred = *counter - (cur_pos ? cur_pos : start_pos);
 	cur_pos = *counter;
@@ -166,11 +158,16 @@ refresh_progress_meter(int force_update)
 
 	/* filename */
 	buf[0] = '\0';
-	file_len = win_size - 36;
+	file_len = win_size - 35;
 	if (file_len > 0) {
-		buf[0] = '\r';
-		snmprintf(buf+1, sizeof(buf)-1, &file_len, "%-*s",
-		    file_len, file);
+		len = snprintf(buf, file_len + 1, "\r%s", file);
+		if (len < 0)
+			len = 0;
+		if (len >= file_len + 1)
+			len = file_len;
+		for (i = len; i < file_len; i++)
+			buf[i] = ' ';
+		buf[file_len] = '\0';
 	}
 
 	/* percent of transfer done */
@@ -231,10 +228,22 @@ refresh_progress_meter(int force_update)
 
 /*ARGSUSED*/
 static void
-sig_alarm(int ignore)
+update_progress_meter(int ignore)
 {
-	alarm_fired = 1;
+	int save_errno;
+
+	save_errno = errno;
+
+	if (win_resized) {
+		setscreensize();
+		win_resized = 0;
+	}
+	if (can_output())
+		refresh_progress_meter();
+
+	signal(SIGALRM, update_progress_meter);
 	alarm(UPDATE_INTERVAL);
+	errno = save_errno;
 }
 
 void
@@ -250,10 +259,11 @@ start_progress_meter(const char *f, off_t filesize, off_t *ctr)
 	bytes_per_second = 0;
 
 	setscreensize();
-	refresh_progress_meter(1);
+	if (can_output())
+		refresh_progress_meter();
 
-	ssh_signal(SIGALRM, sig_alarm);
-	ssh_signal(SIGWINCH, sig_winch);
+	signal(SIGALRM, update_progress_meter);
+	signal(SIGWINCH, sig_winch);
 	alarm(UPDATE_INTERVAL);
 }
 
@@ -267,7 +277,7 @@ stop_progress_meter(void)
 
 	/* Ensure we complete the progress */
 	if (cur_pos != end_pos)
-		refresh_progress_meter(1);
+		refresh_progress_meter();
 
 	atomicio(vwrite, STDOUT_FILENO, "\n", 1);
 }

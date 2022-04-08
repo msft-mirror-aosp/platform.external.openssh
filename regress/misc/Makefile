@@ -1,3 +1,3 @@
-SUBDIR=		kexfuzz sk-dummy
+SUBDIR=		kexfuzz
 
 .include <bsd.subdir.mk>

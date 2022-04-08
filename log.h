@@ -1,4 +1,4 @@
-/* $OpenBSD: log.h,v 1.24 2019/09/06 04:53:27 djm Exp $ */
+/* $OpenBSD: log.h,v 1.21 2016/07/15 05:01:58 dtucker Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
@@ -14,8 +14,6 @@
 
 #ifndef SSH_LOG_H
 #define SSH_LOG_H
-
-#include <stdarg.h> /* va_list */
 
 /* Supported syslog facilities and levels. */
 typedef enum {
@@ -51,8 +49,7 @@ typedef enum {
 typedef void (log_handler_fn)(LogLevel, const char *, void *);
 
 void     log_init(char *, LogLevel, SyslogFacility, int);
-LogLevel log_level_get(void);
-int      log_change_level(LogLevel);
+void     log_change_level(LogLevel);
 int      log_is_on_stderr(void);
 void     log_redirect_stderr_to(const char *);
 

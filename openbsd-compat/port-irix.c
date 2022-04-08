@@ -43,8 +43,6 @@
 # include <sat.h>
 #endif /* WITH_IRIX_AUDIT */
 
-#include "log.h"
-
 void
 irix_setusercontext(struct passwd *pw)
 {

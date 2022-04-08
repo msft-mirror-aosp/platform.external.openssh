@@ -1,4 +1,4 @@
-/* $OpenBSD: auth2-passwd.c,v 1.18 2020/02/26 13:40:09 jsg Exp $ */
+/* $OpenBSD: auth2-passwd.c,v 1.12 2014/07/15 15:54:14 millert Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  *
@@ -27,17 +27,16 @@
 
 #include <sys/types.h>
 
-#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-#include <stdio.h>
 
+#include "xmalloc.h"
 #include "packet.h"
-#include "ssherr.h"
 #include "log.h"
-#include "sshkey.h"
+#include "key.h"
 #include "hostfile.h"
 #include "auth.h"
+#include "buffer.h"
 #ifdef GSSAPI
 #include "ssh-gss.h"
 #endif
@@ -49,27 +48,32 @@
 extern ServerOptions options;
 
 static int
-userauth_passwd(struct ssh *ssh)
+userauth_passwd(Authctxt *authctxt)
 {
-	char *password;
-	int authenticated = 0, r;
-	u_char change;
-	size_t len;
+	char *password, *newpass;
+	int authenticated = 0;
+	int change;
+	u_int len, newlen;
 
-	if ((r = sshpkt_get_u8(ssh, &change)) != 0 ||
-	    (r = sshpkt_get_cstring(ssh, &password, &len)) != 0 ||
-	    (change && (r = sshpkt_get_cstring(ssh, NULL, NULL)) != 0) ||
-	    (r = sshpkt_get_end(ssh)) != 0)
-		fatal("%s: %s", __func__, ssh_err(r));
+	change = packet_get_char();
+	password = packet_get_string(&len);
+	if (change) {
+		/* discard new password from packet */
+		newpass = packet_get_string(&newlen);
+		explicit_bzero(newpass, newlen);
+		free(newpass);
+	}
+	packet_check_eom();
 
 	if (change)
 		logit("password change not supported");
 #if !defined(ANDROID)
 	/* no password authentication in Android */
-	else if (PRIVSEP(auth_password(ssh, password)) == 1)
+	else if (PRIVSEP(auth_password(authctxt, password)) == 1)
 		authenticated = 1;
 #endif
-	freezero(password, len);
+	explicit_bzero(password, len);
+	free(password);
 	return authenticated;
 }
 

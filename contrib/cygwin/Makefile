@@ -13,7 +13,6 @@ defaultsdir=$(sysconfdir)/defaults/etc
 inetdefdir=$(defaultsdir)/inetd.d
 PRIVSEP_PATH=/var/empty
 INSTALL=/usr/bin/install -c
-MKDIR_P=$(srcdir)/mkinstalldirs
 
 DESTDIR=
 
@@ -24,7 +23,7 @@ all:
 	@echo
 
 move-config-files: $(DESTDIR)$(sysconfdir)/ssh_config $(DESTDIR)$(sysconfdir)/sshd_config
-	$(MKDIR_P) $(DESTDIR)$(defaultsdir)
+	$(srcdir)/mkinstalldirs $(DESTDIR)$(defaultsdir)
 	mv $(DESTDIR)$(sysconfdir)/ssh_config $(DESTDIR)$(defaultsdir)
 	mv $(DESTDIR)$(sysconfdir)/sshd_config $(DESTDIR)$(defaultsdir)
 
@@ -32,11 +31,11 @@ remove-empty-dir:
 	rm -rf $(DESTDIR)$(PRIVSEP_PATH)
 
 install-inetd-config:
-	$(MKDIR_P) $(DESTDIR)$(inetdefdir)
+	$(srcdir)/mkinstalldirs $(DESTDIR)$(inetdefdir)
 	$(INSTALL) -m 644 sshd-inetd  $(DESTDIR)$(inetdefdir)/sshd-inetd
 
 install-sshdoc:
-	$(MKDIR_P) $(DESTDIR)$(sshdocdir)
+	$(srcdir)/mkinstalldirs $(DESTDIR)$(sshdocdir)
 	-$(INSTALL) -m 644 $(srcdir)/CREDITS $(DESTDIR)$(sshdocdir)/CREDITS
 	-$(INSTALL) -m 644 $(srcdir)/ChangeLog $(DESTDIR)$(sshdocdir)/ChangeLog
 	-$(INSTALL) -m 644 $(srcdir)/LICENCE $(DESTDIR)$(sshdocdir)/LICENCE
@@ -53,13 +52,13 @@ install-sshdoc:
 	-$(INSTALL) -m 644 $(srcdir)/TODO $(DESTDIR)$(sshdocdir)/TODO
 
 install-cygwindoc: README
-	$(MKDIR_P) $(DESTDIR)$(cygdocdir)
+	$(srcdir)/mkinstalldirs $(DESTDIR)$(cygdocdir)
 	$(INSTALL) -m 644 README $(DESTDIR)$(cygdocdir)/openssh.README
 
 install-doc: install-sshdoc install-cygwindoc
 
 install-scripts: ssh-host-config ssh-user-config
-	$(MKDIR_P) $(DESTDIR)$(bindir)
+	$(srcdir)/mkinstalldirs $(DESTDIR)$(bindir)
 	$(INSTALL) -m 755 ssh-host-config $(DESTDIR)$(bindir)/ssh-host-config
 	$(INSTALL) -m 755 ssh-user-config $(DESTDIR)$(bindir)/ssh-user-config
 

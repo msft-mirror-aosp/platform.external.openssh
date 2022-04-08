@@ -1,4 +1,4 @@
-/* $OpenBSD: sftp-client.c,v 1.135 2019/10/04 04:31:59 djm Exp $ */
+/* $OpenBSD: sftp-client.c,v 1.126 2017/01/03 05:46:51 djm Exp $ */
 /*
  * Copyright (c) 2001-2004 Damien Miller <djm@openbsd.org>
  *
@@ -86,7 +86,6 @@ struct sftp_conn {
 #define SFTP_EXT_FSTATVFS	0x00000004
 #define SFTP_EXT_HARDLINK	0x00000008
 #define SFTP_EXT_FSYNC		0x00000010
-#define SFTP_EXT_LSETSTAT	0x00000020
 	u_int exts;
 	u_int64_t limit_kbps;
 	struct bwlimit bwlimit_in, bwlimit_out;
@@ -102,9 +101,7 @@ sftpio(void *_bwlimit, size_t amount)
 {
 	struct bwlimit *bwlimit = (struct bwlimit *)_bwlimit;
 
-	refresh_progress_meter(0);
-	if (bwlimit != NULL)
-		bandwidth_limit(bwlimit, amount);
+	bandwidth_limit(bwlimit, amount);
 	return 0;
 }
 
@@ -124,8 +121,8 @@ send_msg(struct sftp_conn *conn, struct sshbuf *m)
 	iov[1].iov_base = (u_char *)sshbuf_ptr(m);
 	iov[1].iov_len = sshbuf_len(m);
 
-	if (atomiciov6(writev, conn->fd_out, iov, 2, sftpio,
-	    conn->limit_kbps > 0 ? &conn->bwlimit_out : NULL) !=
+	if (atomiciov6(writev, conn->fd_out, iov, 2,
+	    conn->limit_kbps > 0 ? sftpio : NULL, &conn->bwlimit_out) !=
 	    sshbuf_len(m) + sizeof(mlen))
 		fatal("Couldn't send packet: %s", strerror(errno));
 
@@ -133,7 +130,7 @@ send_msg(struct sftp_conn *conn, struct sshbuf *m)
 }
 
 static void
-get_msg_extended(struct sftp_conn *conn, struct sshbuf *m, int initial)
+get_msg(struct sftp_conn *conn, struct sshbuf *m)
 {
 	u_int msg_len;
 	u_char *p;
@@ -141,9 +138,9 @@ get_msg_extended(struct sftp_conn *conn, struct sshbuf *m, int initial)
 
 	if ((r = sshbuf_reserve(m, 4, &p)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	if (atomicio6(read, conn->fd_in, p, 4, sftpio,
-	    conn->limit_kbps > 0 ? &conn->bwlimit_in : NULL) != 4) {
-		if (errno == EPIPE || errno == ECONNRESET)
+	if (atomicio6(read, conn->fd_in, p, 4,
+	    conn->limit_kbps > 0 ? sftpio : NULL, &conn->bwlimit_in) != 4) {
+		if (errno == EPIPE)
 			fatal("Connection closed");
 		else
 			fatal("Couldn't read packet: %s", strerror(errno));
@@ -151,29 +148,19 @@ get_msg_extended(struct sftp_conn *conn, struct sshbuf *m, int initial)
 
 	if ((r = sshbuf_get_u32(m, &msg_len)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	if (msg_len > SFTP_MAX_MSG_LENGTH) {
-		do_log2(initial ? SYSLOG_LEVEL_ERROR : SYSLOG_LEVEL_FATAL,
-		    "Received message too long %u", msg_len);
-		fatal("Ensure the remote shell produces no output "
-		    "for non-interactive sessions.");
-	}
+	if (msg_len > SFTP_MAX_MSG_LENGTH)
+		fatal("Received message too long %u", msg_len);
 
 	if ((r = sshbuf_reserve(m, msg_len, &p)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	if (atomicio6(read, conn->fd_in, p, msg_len, sftpio,
-	    conn->limit_kbps > 0 ? &conn->bwlimit_in : NULL)
+	if (atomicio6(read, conn->fd_in, p, msg_len,
+	    conn->limit_kbps > 0 ? sftpio : NULL, &conn->bwlimit_in)
 	    != msg_len) {
 		if (errno == EPIPE)
 			fatal("Connection closed");
 		else
 			fatal("Read packet: %s", strerror(errno));
 	}
-}
-
-static void
-get_msg(struct sftp_conn *conn, struct sshbuf *m)
-{
-	get_msg_extended(conn, m, 0);
 }
 
 static void
@@ -419,7 +406,7 @@ do_init(int fd_in, int fd_out, u_int transfer_buflen, u_int num_requests,
 
 	sshbuf_reset(msg);
 
-	get_msg_extended(ret, msg, 1);
+	get_msg(ret, msg);
 
 	/* Expecting a VERSION reply */
 	if ((r = sshbuf_get_u8(msg, &type)) != 0)
@@ -465,10 +452,6 @@ do_init(int fd_in, int fd_out, u_int transfer_buflen, u_int num_requests,
 		} else if (strcmp(name, "fsync@openssh.com") == 0 &&
 		    strcmp((char *)value, "1") == 0) {
 			ret->exts |= SFTP_EXT_FSYNC;
-			known = 1;
-		} else if (strcmp(name, "lsetstat@openssh.com") == 0 &&
-		    strcmp((char *)value, "1") == 0) {
-			ret->exts |= SFTP_EXT_LSETSTAT;
 			known = 1;
 		}
 		if (known) {
@@ -631,7 +614,8 @@ do_lsreaddir(struct sftp_conn *conn, const char *path, int print_flag,
 				    __func__, ssh_err(r));
 				free(filename);
 				free(longname);
-				goto out;
+				sshbuf_free(msg);
+				return -1;
 			}
 
 			if (print_flag)
@@ -675,7 +659,7 @@ do_lsreaddir(struct sftp_conn *conn, const char *path, int print_flag,
 		**dir = NULL;
 	}
 
-	return status == SSH2_FX_OK ? 0 : -1;
+	return status;
 }
 
 int
@@ -1025,7 +1009,7 @@ do_fsync(struct sftp_conn *conn, u_char *handle, u_int handle_len)
 	if (status != SSH2_FX_OK)
 		error("Couldn't sync file: %s", fx2txt(status));
 
-	return status == SSH2_FX_OK ? 0 : -1;
+	return status;
 }
 
 #ifdef notyet
@@ -1102,6 +1086,7 @@ do_statvfs(struct sftp_conn *conn, const char *path, struct sftp_statvfs *st,
 
 	if ((msg = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
+	sshbuf_reset(msg);
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_EXTENDED)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, "statvfs@openssh.com")) != 0 ||
@@ -1130,6 +1115,7 @@ do_fstatvfs(struct sftp_conn *conn, const u_char *handle, u_int handle_len,
 
 	if ((msg = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
+	sshbuf_reset(msg);
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_EXTENDED)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, "fstatvfs@openssh.com")) != 0 ||
@@ -1142,38 +1128,6 @@ do_fstatvfs(struct sftp_conn *conn, const u_char *handle, u_int handle_len,
 }
 #endif
 
-int
-do_lsetstat(struct sftp_conn *conn, const char *path, Attrib *a)
-{
-	struct sshbuf *msg;
-	u_int status, id;
-	int r;
-
-	if ((conn->exts & SFTP_EXT_LSETSTAT) == 0) {
-		error("Server does not support lsetstat@openssh.com extension");
-		return -1;
-	}
-
-	id = conn->msg_id++;
-	if ((msg = sshbuf_new()) == NULL)
-		fatal("%s: sshbuf_new failed", __func__);
-	if ((r = sshbuf_put_u8(msg, SSH2_FXP_EXTENDED)) != 0 ||
-	    (r = sshbuf_put_u32(msg, id)) != 0 ||
-	    (r = sshbuf_put_cstring(msg, "lsetstat@openssh.com")) != 0 ||
-	    (r = sshbuf_put_cstring(msg, path)) != 0 ||
-	    (r = encode_attrib(msg, a)) != 0)
-		fatal("%s: buffer error: %s", __func__, ssh_err(r));
-	send_msg(conn, msg);
-	sshbuf_free(msg);
-
-	status = get_status(conn, id);
-	if (status != SSH2_FX_OK)
-		error("Couldn't setstat on \"%s\": %s", path,
-		    fx2txt(status));
-
-	return status == SSH2_FX_OK ? 0 : -1;
-}
-
 static void
 send_read_request(struct sftp_conn *conn, u_int id, u_int64_t offset,
     u_int len, const u_char *handle, u_int handle_len)
@@ -1183,6 +1137,7 @@ send_read_request(struct sftp_conn *conn, u_int id, u_int64_t offset,
 
 	if ((msg = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
+	sshbuf_reset(msg);
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_READ)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_string(msg, handle, handle_len)) != 0 ||
@@ -1202,7 +1157,7 @@ do_download(struct sftp_conn *conn, const char *remote_path,
 	struct sshbuf *msg;
 	u_char *handle;
 	int local_fd = -1, write_error;
-	int read_error, write_errno, lmodified = 0, reordered = 0, r;
+	int read_error, write_errno, reordered = 0, r;
 	u_int64_t offset = 0, size, highwater;
 	u_int mode, id, buflen, num_req, max_req, status = SSH2_FX_OK;
 	off_t progress_counter;
@@ -1372,7 +1327,6 @@ do_download(struct sftp_conn *conn, const char *remote_path,
 			if (len > req->len)
 				fatal("Received more data than asked for "
 				    "%zu > %zu", len, req->len);
-			lmodified = 1;
 			if ((lseek(local_fd, req->offset, SEEK_SET) == -1 ||
 			    atomicio(vwrite, local_fd, data, len) != len) &&
 			    !write_error) {
@@ -1476,9 +1430,7 @@ do_download(struct sftp_conn *conn, const char *remote_path,
 				error("Can't set times on \"%s\": %s",
 				    local_path, strerror(errno));
 		}
-		if (resume_flag && !lmodified)
-			logit("File \"%s\" was not modified", local_path);
-		else if (fsync_flag) {
+		if (fsync_flag) {
 			debug("syncing \"%s\"", local_path);
 			if (fsync(local_fd) == -1)
 				error("Couldn't sync file \"%s\": %s",
@@ -1489,7 +1441,7 @@ do_download(struct sftp_conn *conn, const char *remote_path,
 	sshbuf_free(msg);
 	free(handle);
 
-	return status == SSH2_FX_OK ? 0 : -1;
+	return(status);
 }
 
 static int
@@ -1499,7 +1451,7 @@ download_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 {
 	int i, ret = 0;
 	SFTP_DIRENT **dir_entries;
-	char *filename, *new_src = NULL, *new_dst = NULL;
+	char *filename, *new_src, *new_dst;
 	mode_t mode = 0777;
 
 	if (depth >= MAX_DIR_DEPTH) {
@@ -1537,10 +1489,8 @@ download_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 	}
 
 	for (i = 0; dir_entries[i] != NULL && !interrupted; i++) {
-		free(new_dst);
-		free(new_src);
-
 		filename = dir_entries[i]->filename;
+
 		new_dst = path_append(dst, filename);
 		new_src = path_append(src, filename);
 
@@ -1563,9 +1513,9 @@ download_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 		} else
 			logit("%s: not a regular file\n", new_src);
 
+		free(new_dst);
+		free(new_src);
 	}
-	free(new_dst);
-	free(new_src);
 
 	if (preserve_flag) {
 		if (dirattrib->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
@@ -1833,7 +1783,7 @@ upload_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 	int ret = 0;
 	DIR *dirp;
 	struct dirent *dp;
-	char *filename, *new_src = NULL, *new_dst = NULL;
+	char *filename, *new_src, *new_dst;
 	struct stat sb;
 	Attrib a, *dirattrib;
 
@@ -1884,8 +1834,6 @@ upload_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 	while (((dp = readdir(dirp)) != NULL) && !interrupted) {
 		if (dp->d_ino == 0)
 			continue;
-		free(new_dst);
-		free(new_src);
 		filename = dp->d_name;
 		new_dst = path_append(dst, filename);
 		new_src = path_append(src, filename);
@@ -1912,9 +1860,9 @@ upload_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 			}
 		} else
 			logit("%s: not a regular file\n", filename);
+		free(new_dst);
+		free(new_src);
 	}
-	free(new_dst);
-	free(new_src);
 
 	do_setstat(conn, dst, &a);
 

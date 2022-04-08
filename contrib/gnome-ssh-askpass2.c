@@ -39,10 +39,6 @@
 #define GRAB_TRIES	16
 #define GRAB_WAIT	250 /* milliseconds */
 
-#define PROMPT_ENTRY	0
-#define PROMPT_CONFIRM	1
-#define PROMPT_NONE	2
-
 /*
  * Compile with:
  *
@@ -86,12 +82,11 @@ ok_dialog(GtkWidget *entry, gpointer dialog)
 }
 
 static int
-passphrase_dialog(char *message, int prompt_type)
+passphrase_dialog(char *message)
 {
 	const char *failed;
 	char *passphrase, *local;
 	int result, grab_tries, grab_server, grab_pointer;
-	int buttons, default_response;
 	GtkWidget *parent_window, *dialog, *entry;
 	GdkGrabStatus status;
 
@@ -103,42 +98,30 @@ passphrase_dialog(char *message, int prompt_type)
 	 * complain.  */
 	parent_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 
-	switch (prompt_type) {
-	case PROMPT_CONFIRM:
-		buttons = GTK_BUTTONS_YES_NO;
-		default_response = GTK_RESPONSE_YES;
-		break;
-	case PROMPT_NONE:
-		buttons = GTK_BUTTONS_CLOSE;
-		default_response = GTK_RESPONSE_CLOSE;
-		break;
-	default:
-		buttons = GTK_BUTTONS_OK_CANCEL;
-		default_response = GTK_RESPONSE_OK;
-		break;
-	}
-
 	dialog = gtk_message_dialog_new(GTK_WINDOW(parent_window), 0,
-	    GTK_MESSAGE_QUESTION, buttons, "%s", message);
+					GTK_MESSAGE_QUESTION,
+					GTK_BUTTONS_OK_CANCEL,
+					"%s",
+					message);
+
+	entry = gtk_entry_new();
+	gtk_box_pack_start(
+	    GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry,
+	    FALSE, FALSE, 0);
+	gtk_entry_set_visibility(GTK_ENTRY(entry), FALSE);
+	gtk_widget_grab_focus(entry);
+	gtk_widget_show(entry);
 
 	gtk_window_set_title(GTK_WINDOW(dialog), "OpenSSH");
 	gtk_window_set_position (GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
 	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
-	gtk_dialog_set_default_response(GTK_DIALOG(dialog), default_response);
-	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
 
-	if (prompt_type == PROMPT_ENTRY) {
-		entry = gtk_entry_new();
-		gtk_box_pack_start(
-		    GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
-		    entry, FALSE, FALSE, 0);
-		gtk_entry_set_visibility(GTK_ENTRY(entry), FALSE);
-		gtk_widget_grab_focus(entry);
-		gtk_widget_show(entry);
-		/* Make <enter> close dialog */
-		g_signal_connect(G_OBJECT(entry), "activate",
-				 G_CALLBACK(ok_dialog), dialog);
-	}
+	/* Make <enter> close dialog */
+	gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+	g_signal_connect(G_OBJECT(entry), "activate",
+			 G_CALLBACK(ok_dialog), dialog);
+
+	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
 
 	/* Grab focus */
 	gtk_widget_show_now(dialog);
@@ -183,37 +166,32 @@ passphrase_dialog(char *message, int prompt_type)
 	gdk_flush();
 
 	/* Report passphrase if user selected OK */
-	if (prompt_type == PROMPT_ENTRY) {
-		passphrase = g_strdup(gtk_entry_get_text(GTK_ENTRY(entry)));
-		if (result == GTK_RESPONSE_OK) {
-			local = g_locale_from_utf8(passphrase,
-			    strlen(passphrase), NULL, NULL, NULL);
-			if (local != NULL) {
-				puts(local);
-				memset(local, '\0', strlen(local));
-				g_free(local);
-			} else {
-				puts(passphrase);
-			}
+	passphrase = g_strdup(gtk_entry_get_text(GTK_ENTRY(entry)));
+	if (result == GTK_RESPONSE_OK) {
+		local = g_locale_from_utf8(passphrase, strlen(passphrase),
+					   NULL, NULL, NULL);
+		if (local != NULL) {
+			puts(local);
+			memset(local, '\0', strlen(local));
+			g_free(local);
+		} else {
+			puts(passphrase);
 		}
-		/* Zero passphrase in memory */
-		memset(passphrase, '\b', strlen(passphrase));
-		gtk_entry_set_text(GTK_ENTRY(entry), passphrase);
-		memset(passphrase, '\0', strlen(passphrase));
-		g_free(passphrase);
 	}
-
+		
+	/* Zero passphrase in memory */
+	memset(passphrase, '\b', strlen(passphrase));
+	gtk_entry_set_text(GTK_ENTRY(entry), passphrase);
+	memset(passphrase, '\0', strlen(passphrase));
+	g_free(passphrase);
+			
 	gtk_widget_destroy(dialog);
-	if (result != GTK_RESPONSE_OK && result != GTK_RESPONSE_YES)
-		return -1;
-	return 0;
+	return (result == GTK_RESPONSE_OK ? 0 : -1);
 
+	/* At least one grab failed - ungrab what we got, and report
+	   the failure to the user.  Note that XGrabServer() cannot
+	   fail.  */
  nograbkb:
-	/*
-	 * At least one grab failed - ungrab what we got, and report
-	 * the failure to the user.  Note that XGrabServer() cannot
-	 * fail.
-	 */
 	gdk_pointer_ungrab(GDK_CURRENT_TIME);
  nograb:
 	if (grab_server)
@@ -228,8 +206,8 @@ passphrase_dialog(char *message, int prompt_type)
 int
 main(int argc, char **argv)
 {
-	char *message, *prompt_mode;
-	int result, prompt_type = PROMPT_ENTRY;
+	char *message;
+	int result;
 
 	gtk_init(&argc, &argv);
 
@@ -239,15 +217,8 @@ main(int argc, char **argv)
 		message = g_strdup("Enter your OpenSSH passphrase:");
 	}
 
-	if ((prompt_mode = getenv("SSH_ASKPASS_PROMPT")) != NULL) {
-		if (strcasecmp(prompt_mode, "confirm") == 0)
-			prompt_type = PROMPT_CONFIRM;
-		else if (strcasecmp(prompt_mode, "none") == 0)
-			prompt_type = PROMPT_NONE;
-	}
-
 	setvbuf(stdout, 0, _IONBF, 0);
-	result = passphrase_dialog(message, prompt_type);
+	result = passphrase_dialog(message);
 	g_free(message);
 
 	return (result);

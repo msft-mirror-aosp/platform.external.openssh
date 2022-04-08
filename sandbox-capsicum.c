@@ -22,7 +22,7 @@
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <sys/capsicum.h>
+#include <sys/capability.h>
 
 #include <errno.h>
 #include <stdarg.h>

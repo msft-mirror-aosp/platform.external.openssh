@@ -1,4 +1,4 @@
-#	$OpenBSD: cert-userkey.sh,v 1.25 2020/01/03 03:02:26 djm Exp $
+#	$OpenBSD: cert-userkey.sh,v 1.17 2016/11/30 03:01:33 djm Exp $
 #	Placed in the Public Domain.
 
 tid="certified user keys"
@@ -7,37 +7,23 @@ rm -f $OBJ/authorized_keys_$USER $OBJ/user_ca_key* $OBJ/cert_user_key*
 cp $OBJ/sshd_proxy $OBJ/sshd_proxy_bak
 cp $OBJ/ssh_proxy $OBJ/ssh_proxy_bak
 
-PLAIN_TYPES=`$SSH -Q key-plain | maybe_filter_sk | sed 's/^ssh-dss/ssh-dsa/;s/^ssh-//'`
-EXTRA_TYPES=""
-rsa=""
+PLAIN_TYPES=`$SSH -Q key-plain | sed 's/^ssh-dss/ssh-dsa/;s/^ssh-//'`
 
 if echo "$PLAIN_TYPES" | grep '^rsa$' >/dev/null 2>&1 ; then
-	rsa=rsa
 	PLAIN_TYPES="$PLAIN_TYPES rsa-sha2-256 rsa-sha2-512"
 fi
 
 kname() {
-	case $1 in
-	rsa-sha2-*) n="$1" ;;
-	sk-ecdsa-*) n="sk-ecdsa" ;;
-	sk-ssh-ed25519*) n="sk-ssh-ed25519" ;;
+	case $ktype in
+	rsa-sha2-*) ;;
 	# subshell because some seds will add a newline
 	*) n=$(echo $1 | sed 's/^dsa/ssh-dss/;s/^rsa/ssh-rsa/;s/^ed/ssh-ed/') ;;
 	esac
-	if [ -z "$rsa" ]; then
-		echo "$n*,ssh-ed25519*"
-	else
-		echo "$n*,ssh-rsa*,ssh-ed25519*"
-	fi
+	echo "$n*,ssh-rsa*,ssh-ed25519*"
 }
 
 # Create a CA key
-if [ ! -z "$rsa" ]; then
-	catype=rsa
-else
-	catype=ed25519
-fi
-${SSHKEYGEN} -q -N '' -t $catype  -f $OBJ/user_ca_key ||\
+${SSHKEYGEN} -q -N '' -t rsa  -f $OBJ/user_ca_key ||\
 	fail "ssh-keygen of user_ca_key failed"
 
 # Generate and sign user keys
@@ -60,7 +46,7 @@ done
 # Test explicitly-specified principals
 for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 	t=$(kname $ktype)
-	for privsep in yes ; do
+	for privsep in yes no ; do
 		_prefix="${ktype} privsep $privsep"
 
 		# Setup for AuthorizedPrincipalsFile
@@ -81,7 +67,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		# Missing authorized_principals
 		verbose "$tid: ${_prefix} missing authorized_principals"
 		rm -f $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpectedly"
@@ -90,7 +76,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		# Empty authorized_principals
 		verbose "$tid: ${_prefix} empty authorized_principals"
 		echo > $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpectedly"
@@ -99,7 +85,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		# Wrong authorized_principals
 		verbose "$tid: ${_prefix} wrong authorized_principals"
 		echo gregorsamsa > $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpectedly"
@@ -108,7 +94,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		# Correct authorized_principals
 		verbose "$tid: ${_prefix} correct authorized_principals"
 		echo mekmitasdigoat > $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -ne 0 ]; then
 			fail "ssh cert connect failed"
@@ -117,7 +103,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		# authorized_principals with bad key option
 		verbose "$tid: ${_prefix} authorized_principals bad key opt"
 		echo 'blah mekmitasdigoat' > $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpectedly"
@@ -127,7 +113,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		verbose "$tid: ${_prefix} authorized_principals command=false"
 		echo 'command="false" mekmitasdigoat' > \
 		    $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpectedly"
@@ -138,7 +124,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 		verbose "$tid: ${_prefix} authorized_principals command=true"
 		echo 'command="true" mekmitasdigoat' > \
 		    $OBJ/authorized_principals_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost false >/dev/null 2>&1
 		if [ $? -ne 0 ]; then
 			fail "ssh cert connect failed"
@@ -162,7 +148,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 			printf 'cert-authority,principals="gregorsamsa" '
 			cat $OBJ/user_ca_key.pub
 		) > $OBJ/authorized_keys_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpectedly"
@@ -174,7 +160,7 @@ for ktype in $EXTRA_TYPES $PLAIN_TYPES ; do
 			printf 'cert-authority,principals="mekmitasdigoat" '
 			cat $OBJ/user_ca_key.pub
 		) > $OBJ/authorized_keys_$USER
-		${SSH} -i $OBJ/cert_user_key_${ktype} \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} \
 		    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 		if [ $? -ne 0 ]; then
 			fail "ssh cert connect failed"
@@ -197,7 +183,7 @@ basic_tests() {
 
 	for ktype in $PLAIN_TYPES ; do
 		t=$(kname $ktype)
-		for privsep in yes ; do
+		for privsep in yes no ; do
 			_prefix="${ktype} privsep $privsep $auth"
 			# Simple connect
 			verbose "$tid: ${_prefix} connect"
@@ -212,7 +198,7 @@ basic_tests() {
 				echo "PubkeyAcceptedKeyTypes ${t}"
 			) > $OBJ/ssh_proxy
 
-			${SSH} -i $OBJ/cert_user_key_${ktype} \
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
 			    -F $OBJ/ssh_proxy somehost true
 			if [ $? -ne 0 ]; then
 				fail "ssh cert connect failed"
@@ -229,7 +215,7 @@ basic_tests() {
 			) > $OBJ/sshd_proxy
 			cp $OBJ/cert_user_key_${ktype}.pub \
 			    $OBJ/cert_user_key_revoked
-			${SSH} -i $OBJ/cert_user_key_${ktype} \
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
 			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				fail "ssh cert connect succeeded unexpecedly"
@@ -238,14 +224,14 @@ basic_tests() {
 			rm $OBJ/cert_user_key_revoked
 			${SSHKEYGEN} -kqf $OBJ/cert_user_key_revoked \
 			    $OBJ/cert_user_key_${ktype}.pub
-			${SSH} -i $OBJ/cert_user_key_${ktype} \
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
 			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				fail "ssh cert connect succeeded unexpecedly"
 			fi
 			verbose "$tid: ${_prefix} empty KRL"
 			${SSHKEYGEN} -kqf $OBJ/cert_user_key_revoked
-			${SSH} -i $OBJ/cert_user_key_${ktype} \
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
 			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 			if [ $? -ne 0 ]; then
 				fail "ssh cert connect failed"
@@ -260,7 +246,7 @@ basic_tests() {
 			echo "PubkeyAcceptedKeyTypes ${t}"
 			echo "$extra_sshd"
 		) > $OBJ/sshd_proxy
-		${SSH} -i $OBJ/cert_user_key_${ktype} -F $OBJ/ssh_proxy \
+		${SSH} -2i $OBJ/cert_user_key_${ktype} -F $OBJ/ssh_proxy \
 		    somehost true >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 			fail "ssh cert connect succeeded unexpecedly"
@@ -274,7 +260,7 @@ basic_tests() {
 		echo "$extra_sshd"
 	) > $OBJ/sshd_proxy
 	verbose "$tid: ensure CA key does not authenticate user"
-	${SSH} -i $OBJ/user_ca_key \
+	${SSH} -2i $OBJ/user_ca_key \
 	    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 	if [ $? -eq 0 ]; then
 		fail "ssh cert connect with CA key succeeded unexpectedly"
@@ -296,7 +282,7 @@ test_one() {
 	fi
 
 	for auth in $auth_choice ; do
-		for ktype in $rsa ed25519 ; do
+		for ktype in rsa ed25519 ; do
 			cat $OBJ/sshd_proxy_bak > $OBJ/sshd_proxy
 			if test "x$auth" = "xauthorized_keys" ; then
 				# Add CA to authorized_keys
@@ -321,7 +307,7 @@ test_one() {
 			    $sign_opts $OBJ/cert_user_key_${ktype} ||
 				fail "couldn't sign cert_user_key_${ktype}"
 
-			${SSH} -i $OBJ/cert_user_key_${ktype} \
+			${SSH} -2i $OBJ/cert_user_key_${ktype} \
 			    -F $OBJ/ssh_proxy somehost true >/dev/null 2>&1
 			rc=$?
 			if [ "x$result" = "xsuccess" ] ; then
@@ -340,7 +326,7 @@ test_one() {
 test_one "correct principal"	success "-n ${USER}"
 test_one "host-certificate"	failure "-n ${USER} -h"
 test_one "wrong principals"	failure "-n foo"
-test_one "cert not yet valid"	failure "-n ${USER} -V20300101:20320101"
+test_one "cert not yet valid"	failure "-n ${USER} -V20200101:20300101"
 test_one "cert expired"		failure "-n ${USER} -V19800101:19900101"
 test_one "cert valid interval"	success "-n ${USER} -V-1w:+2w"
 test_one "wrong source-address"	failure "-n ${USER} -Osource-address=10.0.0.0/8"
@@ -392,7 +378,7 @@ for ktype in $PLAIN_TYPES ; do
 	    -n $USER $OBJ/cert_user_key_${ktype} ||
 		fatal "couldn't sign cert_user_key_${ktype}"
 	verbose "$tid: user ${ktype} connect wrong cert"
-	${SSH} -i $OBJ/cert_user_key_${ktype} -F $OBJ/ssh_proxy \
+	${SSH} -2i $OBJ/cert_user_key_${ktype} -F $OBJ/ssh_proxy \
 	    somehost true >/dev/null 2>&1
 	if [ $? -eq 0 ]; then
 		fail "ssh cert connect $ident succeeded unexpectedly"

@@ -16,9 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef WITH_OPENSSL
 #include <openssl/bn.h>
-#endif
 
 #include "../test_helper/test_helper.h"
 
@@ -29,7 +27,6 @@
 void
 tests(void)
 {
-#ifdef WITH_OPENSSL
 	struct bitmap *b;
 	BIGNUM *bn;
 	size_t len;
@@ -134,6 +131,5 @@ tests(void)
 	bitmap_free(b);
 	BN_free(bn);
 	TEST_DONE();
-#endif
 }
 

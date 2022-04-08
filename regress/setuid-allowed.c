@@ -22,7 +22,6 @@
 #ifdef HAVE_SYS_STATVFS_H
 # include <sys/statvfs.h>
 #endif
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>

@@ -876,25 +876,18 @@ int
 mm_answer_authpassword(struct ssh *ssh, int sock, struct sshbuf *m)
 {
 	static int call_count;
-#if !defined(ANDROID)
 	char *passwd;
-#endif
 	int r, authenticated;
-	size_t plen = 0;
+	size_t plen;
 
 	if (!options.password_authentication)
 		fatal_f("password authentication not enabled");
-#if !defined(ANDROID)
 	if ((r = sshbuf_get_cstring(m, &passwd, &plen)) != 0)
 		fatal_fr(r, "parse");
 	/* Only authenticate if the context is valid */
 	authenticated = options.password_authentication &&
 	    auth_password(ssh, passwd);
 	freezero(passwd, plen);
-#else
-	/* no password authentication in Android. */
-	authenticated = 0;
-#endif
 
 	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, authenticated)) != 0)

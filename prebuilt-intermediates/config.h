@@ -327,7 +327,7 @@
 #define HAVE_DECL__GETSHORT 0
 
 /* Define if you have /dev/ptmx */
-#define HAVE_DEV_PTMX 1
+/* #define HAVE_DEV_PTMX 1 */
 
 /* Define if you have /dev/ptc */
 /* #undef HAVE_DEV_PTS_AND_PTC */
@@ -384,6 +384,8 @@
 
 /* Define to 1 if you have the `EVP_sha256' function. */
 #define HAVE_EVP_SHA256 1
+ #define HAVE_EVP_SHA384 1
+ #define HAVE_EVP_SHA512 1
 
 /* Define if you have ut_exit in utmp.h */
 #define HAVE_EXIT_IN_UTMP 1
@@ -1373,7 +1375,7 @@
 /* #undef OPENSSL_EVP_DIGESTUPDATE_VOID */
 
 /* libcrypto includes complete ECC support */
-#define OPENSSL_HAS_ECC 1
+/* #define OPENSSL_HAS_ECC 1 */
 
 /* libcrypto has NID_X9_62_prime256v1 */
 #define OPENSSL_HAS_NISTP256 1
@@ -1571,7 +1573,7 @@
 /* #undef WITH_IRIX_PROJECT */
 
 /* use libcrypto for cryptography */
-#define WITH_OPENSSL 1
+/* #define WITH_OPENSSL 1 */
 
 /* Define if you want SELinux support. */
 /* #undef WITH_SELINUX */
@@ -1631,7 +1633,7 @@
 #define HAVE_DH_GET0_PQG 1
 #define HAVE_DH_SET0_KEY 1
 #define HAVE_DH_SET0_PQG 1
-#define HAVE_DH_SET_LENGTH 1
+/* #define HAVE_DH_SET_LENGTH 1 */
 #define HAVE_DSA_GET0_KEY 1
 #define HAVE_DSA_GET0_PQG 1
 #define HAVE_DSA_SET0_KEY 1
@@ -1658,3 +1660,4 @@
 #define HAVE_RSA_SET0_CRT_PARAMS 1
 #define HAVE_RSA_SET0_FACTORS 1
 #define HAVE_RSA_SET0_KEY 1
+#define HAVE_STRUCT_POLLFD_FD 1

@@ -51,7 +51,6 @@ license {
 
 cc_defaults {
     name: "ssh_defaults",
-    vendor: true,
     cflags: [
         "-Wno-incompatible-pointer-types",
         "-Wno-pointer-sign",
@@ -62,10 +61,7 @@ cc_defaults {
         "external/openssh/prebuilt-intermediates",
     ],
     shared_libs: [
-        "libdl",
         "libcrypto",
-        "libssl",
-        "libz",
     ],
 }
 
@@ -91,6 +87,7 @@ cc_library {
         "cleanup.c",
         "compat.c",
         "dh.c",
+        "digest-libc.c",
         "digest-openssl.c",
         "dispatch.c",
         "dns.c",
@@ -138,6 +135,7 @@ cc_library {
         "openbsd-compat/getopt_long.c",
         "openbsd-compat/glob.c",
         "openbsd-compat/libressl-api-compat.c",
+        "openbsd-compat/md5.c",
         "openbsd-compat/openssl-compat.c",
         "openbsd-compat/port-linux.c",
         "openbsd-compat/port-net.c",
@@ -147,6 +145,8 @@ cc_library {
         "openbsd-compat/recallocarray.c",
         "openbsd-compat/rresvport.c",
         "openbsd-compat/setproctitle.c",
+        "openbsd-compat/sha1.c",
+        "openbsd-compat/sha2.c",
         "openbsd-compat/strcasestr.c",
         "openbsd-compat/strmode.c",
         "openbsd-compat/strtonum.c",
@@ -186,117 +186,16 @@ cc_library {
 }
 
 cc_binary {
-    name: "ssh",
+    name: "sftp-server",
     defaults: ["ssh_defaults"],
     srcs: [
-        "clientloop.c",
-        "mux.c",
-        "readconf.c",
-        "ssh.c",
-        "sshconnect.c",
-        "sshconnect2.c",
-        "sshtty.c",
-    ],
-    shared_libs: ["libssh"],
-}
-
-cc_binary {
-    name: "sftp",
-    defaults: ["ssh_defaults"],
-    srcs: [
-        "sftp.c",
-        "sftp-client.c",
-        "sftp-common.c",
-        "sftp-glob.c",
-        "progressmeter.c",
-    ],
-    shared_libs: ["libssh"],
-}
-
-cc_binary {
-    name: "scp",
-    defaults: ["ssh_defaults"],
-    srcs: [
-        "scp.c",
-        "sftp-client.c",
-        "sftp-common.c",
-        "sftp-glob.c",
-        "progressmeter.c",
-    ],
-    shared_libs: ["libssh"],
-}
-
-cc_binary {
-    name: "sshd",
-    defaults: ["ssh_defaults"],
-    srcs: [
-        "audit-bsm.c",
-        "audit-linux.c",
-        "audit.c",
-        "auth-bsdauth.c",
-        "auth-krb5.c",
-        "auth-options.c",
-        "auth-pam.c",
-        "auth-rhosts.c",
-        "auth-shadow.c",
-        "auth-sia.c",
-        "auth.c",
-        "auth2-chall.c",
-        "auth2-gss.c",
-        "auth2-hostbased.c",
-        "auth2-kbdint.c",
-        "auth2-none.c",
-        "auth2-passwd.c",
-        "auth2-pubkey.c",
-        "auth2.c",
-        "groupaccess.c",
-        "gss-serv-krb5.c",
-        "gss-serv.c",
-        "kexgexs.c",
-        "loginrec.c",
-        "monitor.c",
-        "monitor_wrap.c",
-        "platform.c",
         "platform-tracing.c",
-        "sandbox-null.c",
-        "sandbox-rlimit.c",
-        "sandbox-systrace.c",
-        "servconf.c",
-        "serverloop.c",
-        "session.c",
         "sftp-common.c",
         "sftp-realpath.c",
         "sftp-server.c",
-        "srclimit.c",
-        "sshd.c",
-        "sshlogin.c",
-        "sshpty.c",
+        "sftp-server-main.c",
     ],
     shared_libs: [
-        "libcutils",
         "libssh",
     ],
-}
-
-cc_binary {
-    name: "ssh-keygen",
-    defaults: ["ssh_defaults"],
-    srcs: [
-        "ssh-keygen.c",
-        "sshsig.c",
-    ],
-    shared_libs: ["libssh"],
-}
-
-prebuilt_etc {
-    name: "sshd_config",
-    vendor: true,
-    src: "sshd_config.android",
-    relative_install_path: "ssh",
-}
-
-sh_binary {
-    name: "start-ssh",
-    vendor: true,
-    src: "start-ssh",
 }

@@ -64,11 +64,8 @@ userauth_passwd(struct ssh *ssh, const char *method)
 
 	if (change)
 		logit("password change not supported");
-#if !defined(ANDROID)
-	/* no password authentication in Android */
 	else if (PRIVSEP(auth_password(ssh, password)) == 1)
 		authenticated = 1;
-#endif
 	freezero(password, len);
 	return authenticated;
 }

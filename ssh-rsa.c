@@ -132,10 +132,8 @@ ssh_rsa_complete_crt_parameters(struct sshkey *key, const BIGNUM *iqmp)
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-#if !defined(OPENSSL_IS_BORINGSSL)
 	BN_set_flags(aux, BN_FLG_CONSTTIME);
 	BN_set_flags(d_consttime, BN_FLG_CONSTTIME);
-#endif
 
 	if ((BN_sub(aux, rsa_q, BN_value_one()) == 0) ||
 	    (BN_mod(rsa_dmq1, d_consttime, aux, ctx) == 0) ||

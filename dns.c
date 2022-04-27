@@ -224,10 +224,9 @@ verify_host_key_dns(const char *hostname, struct sockaddr *address,
 	result = getrrsetbyname(hostname, DNS_RDATACLASS_IN,
 	    DNS_RDATATYPE_SSHFP, 0, &fingerprints);
 #else
-	/* unsupported in Android. */
-	result = -1;
+        /* unsupported in Android. */
+        result = -1;
 #endif
-
 	if (result) {
 		verbose("DNS lookup error: %s", dns_result_totext(result));
 		return -1;

@@ -71,10 +71,6 @@
 #include "myproposal.h"
 #include "digest.h"
 
-#if defined(ANDROID)
-#include <cutils/properties.h>
-#endif
-
 static void add_listen_addr(ServerOptions *, const char *,
     const char *, int);
 static void add_one_listen_addr(ServerOptions *, const char *,
@@ -2521,20 +2517,10 @@ parse_server_match_config(ServerOptions *options,
    struct include_list *includes, struct connection_info *connectinfo)
 {
 	ServerOptions mo;
-#if defined(ANDROID)
-	char value[PROPERTY_VALUE_MAX];
-#endif
 
 	initialize_server_options(&mo);
 	parse_server_config(&mo, "reprocess config", cfg, includes,
 	    connectinfo, 0);
-#if defined(ANDROID)
-	/* Allow root login if ro.debuggable is set. */
-	property_get("ro.debuggable", value, "");
-	if (strcmp(value, "1") == 0) {
-		mo.permit_root_login = PERMIT_YES;
-	}
-#endif
 	copy_set_server_options(options, &mo, 0);
 }
 

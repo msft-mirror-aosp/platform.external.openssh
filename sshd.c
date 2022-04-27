@@ -1807,9 +1807,7 @@ main(int ac, char **av)
 		freezero(privsep_pw->pw_passwd, strlen(privsep_pw->pw_passwd));
 		privsep_pw->pw_passwd = xstrdup("*");
 	}
-#if !defined(ANDROID)
 	endpwent();
-#endif
 
 	/* load host keys */
 	sensitive_data.host_keys = xcalloc(options.num_host_key_files,

@@ -82,7 +82,6 @@ cc_library {
         "cipher-aes.c",
         "cipher-aesctr.c",
         "cipher-chachapoly.c",
-        "cipher-ctr.c",
         "cipher.c",
         "cleanup.c",
         "compat.c",

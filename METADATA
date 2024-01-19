@@ -11,7 +11,7 @@ third_party {
     type: GIT
     value: "https://github.com/openssh/openssh-portable"
   }
-  version: "V_9_5_P1"
-  last_upgrade_date { year: 2023 month: 10 day: 4 }
+  version: "V_9_6_P1"
+  last_upgrade_date { year: 2023 month: 12 day: 19 }
   license_type: NOTICE
 }
